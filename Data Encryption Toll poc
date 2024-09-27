@@ -1,0 +1,114 @@
+import pandas as pd
+from cryptography.fernet import Fernet
+
+# File to store the records
+RECORDS_FILE = "encryption_records.xlsx"
+
+# EncryptionRecord class to manage individual records
+class EncryptionRecord:
+    def __init__(self, data_id, data, key):
+        self.data_id = data_id
+        self.data = data
+        self.key = key  # Store the key used for encryption
+
+    def to_dict(self):
+        return {
+            'data_id': self.data_id,
+            'data': self.data.decode(),  # Store as a string
+            'key': self.key.decode()  # Store as a string
+        }
+
+    @staticmethod
+    def from_dict(data):
+        return EncryptionRecord(
+            data_id=data['data_id'],
+            data=data['data'].encode(),  # Convert back to bytes
+            key=data['key'].encode()  # Convert back to bytes
+        )
+
+class EncryptionManager:
+    def __init__(self):
+        self.records = {}
+        self.load_records()
+
+    def load_records(self):
+        try:
+            df = pd.read_excel(RECORDS_FILE)
+            for _, row in df.iterrows():
+                record = EncryptionRecord(
+                    data_id=row['data_id'],
+                    data=row['data'].encode(),
+                    key=row['key'].encode()
+                )
+                self.records[record.data_id] = record
+        except FileNotFoundError:
+            print("No existing records found. Starting fresh.")
+        except Exception as e:
+            print(f"Error loading records: {e}")
+
+    def save_records(self):
+        df = pd.DataFrame([record.to_dict() for record in self.records.values()])
+        df.to_excel(RECORDS_FILE, index=False)
+
+    def generate_key(self):
+        return Fernet.generate_key()
+    
+    def encrypt_sensitive_data(self, data_id):
+        if not data_id or data_id in self.records:
+            raise ValueError("Data ID must be unique and non-empty.")
+        
+        data = input("Enter the data you want to encrypt: ")
+        if not data:
+            raise ValueError("Data cannot be empty.")
+        
+        key = self.generate_key()
+        fernet = Fernet(key)
+        encrypted_data = fernet.encrypt(data.encode())
+        
+        record = EncryptionRecord(data_id, encrypted_data, key)
+        self.records[data_id] = record
+        self.save_records()
+        return encrypted_data
+
+    def decrypt_sensitive_data(self, data_id):
+        record = self.records.get(data_id)
+        if record is None:
+            raise ValueError("Record not found.")
+        
+        fernet = Fernet(record.key)
+        decrypted_data = fernet.decrypt(record.data).decode()
+        return decrypted_data
+
+def user_interface():
+    manager = EncryptionManager()
+
+    while True:
+        action = input("1. Encrypt \n2. Decrypt \n3. Quit: \nEnter your choice: ").strip()
+        
+        if action == '1':
+            print("Please enter the following details to encrypt your data:")
+            data_id = input("Enter a unique ID for your data: ")
+            
+            try:
+                encrypted_data = manager.encrypt_sensitive_data(data_id)
+                print("Data encrypted successfully.")
+            except ValueError as e:
+                print(e)
+        
+        elif action == '2':
+            data_id = input("Enter the ID of the data you want to decrypt: ")
+            try:
+                decrypted_data = manager.decrypt_sensitive_data(data_id)
+                print(f"Decrypted Data: {decrypted_data}")
+            except ValueError as e:
+                print(e)
+        
+        elif action == '3':
+            print("Exiting the program.")
+            break
+        
+        else:
+            print("Invalid option, please choose a valid number.")
+
+if __name__ == '__main__':
+    user_interface()
